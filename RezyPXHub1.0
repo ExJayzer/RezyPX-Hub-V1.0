@@ -371,7 +371,7 @@ local function getClosestInFOV()
     return closest
 end
 
--- Toggle aimbot
+-- Toggle aimbot (updated to accept RIGHT OR LEFT click)
 local AimbotConn = nil
 MainTab:CreateToggle({
     Name = "Aimbot",
@@ -383,12 +383,15 @@ MainTab:CreateToggle({
         if Value then
             if AimbotConn then AimbotConn:Disconnect() AimbotConn = nil end
             AimbotConn = RunService.RenderStepped:Connect(function()
-                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                -- accept right-click OR left-click held down
+                local rightDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+                local leftDown  = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+                if rightDown or leftDown then
                     local target = getClosestInFOV()
                     if target and target.Character then
                         local tp = target.Character:FindFirstChild(Aimbot.TargetPart) or target.Character:FindFirstChild("HumanoidRootPart")
-                        if tp then
-                            -- direct look at target
+                        if tp and Camera then
+                            -- direct look at target (instant snap)
                             local camCF = Camera.CFrame
                             Camera.CFrame = CFrame.new(camCF.Position, tp.Position)
                         end
