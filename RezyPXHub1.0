@@ -1,0 +1,424 @@
+-- RezyPX Hub — Full Script (ESP, Fly with Q/E, Centered White FOV, Aimbot, Walkspeed, Game Scripts)
+local ok, Rayfield = pcall(function()
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+if not ok or not Rayfield then
+    warn("Failed to load Rayfield. Aborting.")
+    return
+end
+
+local Window = Rayfield:CreateWindow({
+    Name = "RezyPX Hub",
+    Icon = 0,
+    LoadingTitle = "RezyPX Hub Interface",
+    LoadingSubtitle = "by RezyPX",
+    ShowText = "RezyPX",
+    Theme = "Ocean",
+    ToggleUIKeybind = "K",
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings = false,
+    ConfigurationSaving = { Enabled = false },
+    Discord = { Enabled = true, Invite = "zt5nbHen7H", RememberJoins = false },
+    KeySystem = false
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local mouse = LocalPlayer:GetMouse()
+
+-- safe drawing factory
+local function safeNew(typeName)
+    local success, obj = pcall(function() return Drawing.new(typeName) end)
+    if success and obj then return obj end
+    return nil
+end
+
+-- ========================================================
+-- MAIN TAB: Movement & Fly Toggle hook
+-- ========================================================
+local MainTab = Window:CreateTab("Main", nil)
+MainTab:CreateSection("Movement")
+
+-- Walkspeed
+MainTab:CreateSlider({
+    Name = "Walkspeed",
+    Range = {16, 300},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = 16,
+    Flag = "Slider1",
+    Callback = function(Value)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").WalkSpeed = Value
+        end
+    end
+})
+
+-- ========================================================
+-- FLY (Q/E vertical, WASD horizontal)
+-- Implemented with BodyVelocity + BodyGyro
+-- ========================================================
+local Fly = {
+    Enabled = false,
+    Speed = 50,
+    BV = nil,
+    BG = nil,
+    Conn = nil,
+    ctrl = {f=0,b=0,l=0,r=0,u=0,d=0}
+}
+
+-- Input handling for fly (single listeners)
+do
+    UserInputService.InputBegan:Connect(function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.W then Fly.ctrl.f = 1 end
+        if input.KeyCode == Enum.KeyCode.S then Fly.ctrl.b = -1 end
+        if input.KeyCode == Enum.KeyCode.A then Fly.ctrl.l = -1 end
+        if input.KeyCode == Enum.KeyCode.D then Fly.ctrl.r = 1 end
+        if input.KeyCode == Enum.KeyCode.E then Fly.ctrl.u = 1 end
+        if input.KeyCode == Enum.KeyCode.Q then Fly.ctrl.d = -1 end
+    end)
+    UserInputService.InputEnded:Connect(function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.W then Fly.ctrl.f = 0 end
+        if input.KeyCode == Enum.KeyCode.S then Fly.ctrl.b = 0 end
+        if input.KeyCode == Enum.KeyCode.A then Fly.ctrl.l = 0 end
+        if input.KeyCode == Enum.KeyCode.D then Fly.ctrl.r = 0 end
+        if input.KeyCode == Enum.KeyCode.E then Fly.ctrl.u = 0 end
+        if input.KeyCode == Enum.KeyCode.Q then Fly.ctrl.d = 0 end
+    end)
+end
+
+local function enableFly()
+    if Fly.Enabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    Fly.Enabled = true
+    hum.PlatformStand = true
+
+    Fly.BG = Instance.new("BodyGyro")
+    Fly.BG.P = 9e4
+    Fly.BG.MaxTorque = Vector3.new(9e9,9e9,9e9)
+    Fly.BG.CFrame = hrp.CFrame
+    Fly.BG.Parent = hrp
+
+    Fly.BV = Instance.new("BodyVelocity")
+    Fly.BV.MaxForce = Vector3.new(9e9,9e9,9e9)
+    Fly.BV.Velocity = Vector3.new(0,0,0)
+    Fly.BV.Parent = hrp
+
+    Fly.Conn = RunService.RenderStepped:Connect(function()
+        if not Fly.Enabled then return end
+        local move = (Camera.CFrame.LookVector * (Fly.ctrl.f + Fly.ctrl.b)
+                    + Camera.CFrame.RightVector * (Fly.ctrl.r + Fly.ctrl.l)
+                    + Vector3.new(0, Fly.ctrl.u + Fly.ctrl.d, 0))
+        if move.Magnitude > 0 then move = move.Unit end
+        if Fly.BV then Fly.BV.Velocity = move * Fly.Speed end
+        if Fly.BG then Fly.BG.CFrame = Camera.CFrame end
+    end)
+end
+
+local function disableFly()
+    if not Fly.Enabled then return end
+    Fly.Enabled = false
+    if Fly.Conn then Fly.Conn:Disconnect() Fly.Conn = nil end
+    if Fly.BV then Fly.BV:Destroy() Fly.BV = nil end
+    if Fly.BG then Fly.BG:Destroy() Fly.BG = nil end
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
+    end
+end
+
+MainTab:CreateToggle({
+    Name = "Fly",
+    CurrentValue = false,
+    Flag = "FlyToggle",
+    Callback = function(Value)
+        if Value then enableFly() else disableFly() end
+    end
+})
+
+-- Optional Fly speed slider
+MainTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {10,300},
+    Increment = 1,
+    Suffix = "Speed",
+    CurrentValue = Fly.Speed,
+    Flag = "FlySpeed",
+    Callback = function(Value)
+        Fly.Speed = Value
+    end
+})
+
+-- ========================================================
+MainTab:CreateSection("Visuals")
+-- ========================================================
+
+-- ========================================================
+-- ESP: 2D boxes that match character size (red) + name/distance
+-- ========================================================
+local DrawingSupported = (pcall(function() return Drawing.new end))
+local ESP = {Enabled = false, Objects = {}, Conn = nil}
+
+local function createESPObject(player)
+    if player == LocalPlayer then return end
+    if ESP.Objects[player] then return end
+    local box = nil
+    local label = nil
+    if DrawingSupported then
+        box = safeNew("Square")
+        label = safeNew("Text")
+        if box then
+            pcall(function()
+                box.Thickness = 2
+                box.Filled = false
+                box.Color = Color3.fromRGB(255,0,0)
+                box.Visible = false
+            end)
+        end
+        if label then
+            pcall(function()
+                label.Size = 16
+                label.Color = Color3.fromRGB(255,255,255)
+                label.Center = true
+                label.Outline = true
+                label.Visible = false
+            end)
+        end
+    end
+    ESP.Objects[player] = {Box = box, Label = label}
+end
+
+local function removeESPObject(player)
+    local data = ESP.Objects[player]
+    if not data then return end
+    if data.Box then pcall(function() data.Box:Remove() end) end
+    if data.Label then pcall(function() data.Label:Remove() end) end
+    ESP.Objects[player] = nil
+end
+
+local function getModelBoundingBox2D(model)
+    if not model then return nil end
+    local ok, cf, size = pcall(function() return model:GetBoundingBox() end)
+    if not ok or not cf or not size then return nil end
+    local corners = {
+        Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+        Vector3.new(-size.X/2, -size.Y/2,  size.Z/2),
+        Vector3.new(-size.X/2,  size.Y/2, -size.Z/2),
+        Vector3.new(-size.X/2,  size.Y/2,  size.Z/2),
+        Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
+        Vector3.new( size.X/2, -size.Y/2,  size.Z/2),
+        Vector3.new( size.X/2,  size.Y/2, -size.Z/2),
+        Vector3.new( size.X/2,  size.Y/2,  size.Z/2),
+    }
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    local onScreen = false
+    for _, corner in ipairs(corners) do
+        local worldPos = cf:PointToWorldSpace(corner)
+        local screenPos, vis = Camera:WorldToViewportPoint(worldPos)
+        if vis then onScreen = true end
+        minX = math.min(minX, screenPos.X)
+        minY = math.min(minY, screenPos.Y)
+        maxX = math.max(maxX, screenPos.X)
+        maxY = math.max(maxY, screenPos.Y)
+    end
+    if not onScreen then return nil end
+    return Vector2.new(minX, minY), Vector2.new(maxX, maxY)
+end
+
+local function updateESP()
+    for player, data in pairs(ESP.Objects) do
+        local box = data.Box
+        local label = data.Label
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if char and hum and hum.Health > 0 and box and label then
+            local topLeft, bottomRight = getModelBoundingBox2D(char)
+            if topLeft and bottomRight then
+                local width = bottomRight.X - topLeft.X
+                local height = bottomRight.Y - topLeft.Y
+                pcall(function()
+                    box.Position = topLeft
+                    box.Size = Vector2.new(width, height)
+                    box.Color = Color3.fromRGB(255,0,0)
+                    box.Visible = true
+                    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local theirHRP = char:FindFirstChild("HumanoidRootPart")
+                    local dist = 0
+                    if myHRP and theirHRP then dist = math.floor((theirHRP.Position - myHRP.Position).Magnitude) end
+                    label.Text = string.format("%s | %dm", player.Name, dist)
+                    label.Position = Vector2.new(topLeft.X + width/2, topLeft.Y - 15)
+                    label.Visible = true
+                end)
+            else
+                pcall(function() box.Visible = false; label.Visible = false end)
+            end
+        else
+            if box then pcall(function() box.Visible = false end) end
+            if label then pcall(function() label.Visible = false end) end
+        end
+    end
+end
+
+function ESP.Enable()
+    if ESP.Enabled then return end
+    ESP.Enabled = true
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then createESPObject(p) end
+    end
+    Players.PlayerAdded:Connect(function(p) if ESP.Enabled then createESPObject(p) end end)
+    Players.PlayerRemoving:Connect(removeESPObject)
+    ESP.Conn = RunService.RenderStepped:Connect(function() pcall(updateESP) end)
+end
+
+function ESP.Disable()
+    if not ESP.Enabled then return end
+    ESP.Enabled = false
+    if ESP.Conn then ESP.Conn:Disconnect() ESP.Conn = nil end
+    for p,_ in pairs(ESP.Objects) do removeESPObject(p) end
+    ESP.Objects = {}
+end
+
+MainTab:CreateToggle({
+    Name = "ESP",
+    CurrentValue = false,
+    Flag = "ESPToggle",
+    Callback = function(Value) if Value then ESP.Enable() else ESP.Disable() end end
+})
+
+-- ========================================================
+MainTab:CreateSection("PVP")
+-- ========================================================
+
+-- ========================================================
+-- Aimbot + Centered FOV Circle (white, resizable, Right Click activation)
+-- ========================================================
+local Aimbot = {
+    Enabled = false,
+    TargetPart = "Head",
+    Sensitivity = 1, -- direct snap
+    FOV = 120
+}
+
+local FOVCircle = safeNew("Circle")
+if FOVCircle then
+    pcall(function()
+        FOVCircle.Radius = Aimbot.FOV
+        FOVCircle.Color = Color3.fromRGB(255,255,255)
+        FOVCircle.Thickness = 2
+        FOVCircle.Filled = false
+        FOVCircle.NumSides = 100
+        FOVCircle.Visible = false
+    end)
+end
+
+-- Center the FOV circle
+RunService.RenderStepped:Connect(function()
+    if FOVCircle then
+        local vs = Camera.ViewportSize
+        pcall(function() FOVCircle.Position = Vector2.new(vs.X/2, vs.Y/2) end)
+    end
+end)
+
+-- Slider to control FOV size
+MainTab:CreateSlider({
+    Name = "FOV Size",
+    Range = {50, 500},
+    Increment = 1,
+    Suffix = "px",
+    CurrentValue = Aimbot.FOV,
+    Flag = "FOVSlider",
+    Callback = function(Value)
+        Aimbot.FOV = Value
+        if FOVCircle then pcall(function() FOVCircle.Radius = Value end) end
+    end
+})
+
+local function getClosestInFOV()
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    local closest = nil
+    local closestDist = Aimbot.FOV
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local part = char and char:FindFirstChild(Aimbot.TargetPart)
+            if char and hum and hum.Health > 0 and part then
+                local pos, vis = Camera:WorldToViewportPoint(part.Position)
+                if vis then
+                    local screenVec = Vector2.new(pos.X, pos.Y)
+                    local d = (screenVec - center).Magnitude
+                    if d <= Aimbot.FOV and d < closestDist then
+                        closestDist = d
+                        closest = player
+                    end
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Toggle aimbot
+local AimbotConn = nil
+MainTab:CreateToggle({
+    Name = "Aimbot",
+    CurrentValue = false,
+    Flag = "AimbotToggle",
+    Callback = function(Value)
+        Aimbot.Enabled = Value
+        if FOVCircle then pcall(function() FOVCircle.Visible = Value end) end
+        if Value then
+            if AimbotConn then AimbotConn:Disconnect() AimbotConn = nil end
+            AimbotConn = RunService.RenderStepped:Connect(function()
+                if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                    local target = getClosestInFOV()
+                    if target and target.Character then
+                        local tp = target.Character:FindFirstChild(Aimbot.TargetPart) or target.Character:FindFirstChild("HumanoidRootPart")
+                        if tp then
+                            -- direct look at target
+                            local camCF = Camera.CFrame
+                            Camera.CFrame = CFrame.new(camCF.Position, tp.Position)
+                        end
+                    end
+                end
+            end)
+        else
+            if AimbotConn then AimbotConn:Disconnect() AimbotConn = nil end
+        end
+    end
+})
+
+
+-- ========================================================
+-- GAME SCRIPTS TAB (restored)
+-- ========================================================
+local ScriptsTab = Window:CreateTab("Game Scripts", nil)
+ScriptsTab:CreateSection("Games")
+ScriptsTab:CreateButton({
+    Name = "Load Trident Survival Script",
+    Callback = function()
+        loadstring(game:HttpGet("https://pastebin.com/raw/GL5tNQXX"))()
+    end
+})
+
+-- final notification
+pcall(function()
+    Rayfield:Notify({
+        Title = "RezyPX Hub",
+        Content = "Loaded — ESP, Fly (Q/E), Aimbot, FOV, Walkspeed, Game Scripts available.",
+        Duration = 6
+    })
+end)
